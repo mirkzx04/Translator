@@ -21,7 +21,7 @@ class MultiHeadAttention(Module):
         self.heads = heads
         self.embedding_dim = embedding_dim
 
-        self.heads_dim = embedding_dim // heads
+        self.heads_dim = int(embedding_dim / heads)
 
         self.W_k = Linear(embedding_dim, embedding_dim)
         self.W_q = Linear(embedding_dim, embedding_dim)
@@ -36,9 +36,10 @@ class MultiHeadAttention(Module):
         restituisce la matrice di attenzione
         """
         att_scores = torch.matmul(Q,K.transpose(-2,-1)) / math.sqrt(self.heads_dim)
-
+        # print(f'att_scores shape : {att_scores.shape}')
+        # print(f'mask att shape : {mask.shape}')
         if mask is not None:
-            att_scores = att_scores.masked_fill(mask == 0, float('-inf'))
+            att_scores = att_scores.masked_fill(mask == 0, -1e9)
 
         attn_proba = torch.softmax(att_scores, dim=-1)
 
@@ -61,9 +62,10 @@ class MultiHeadAttention(Module):
         """
         Riconverte la matrice di attenzione nelle dimensioni originali
         """
-        batch_size, _, token_len, embeddin_dim = X_train.size()
+        batch_size, heads, token_len, head_dim = X_train.size()
+        embdding_dim = heads * head_dim
 
-        X_train = X_train.transpose(1,2).contiguous().view(batch_size, token_len, embeddin_dim)
+        X_train = X_train.transpose(1,2).contiguous().view(batch_size, token_len, embdding_dim)
 
         return X_train
     
@@ -71,9 +73,10 @@ class MultiHeadAttention(Module):
         Q = self.split_head(self.W_q(Q))
         K = self.split_head(self.W_k(K))
         V = self.split_head(self.W_v(V))
+        # print(f'Shape di Q K e V {Q.shape}')
 
-        if mask is not None:
-            mask = mask.unsqueeze(1).unsqueeze(1)
+        # if mask is not None:
+        #     mask = mask.unsqueeze(1).unsqueeze(1)
 
         attn_out = self.dot_product(Q,K,V, mask)
 

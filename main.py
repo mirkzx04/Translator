@@ -2,15 +2,20 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 import tqdm
+import torch
 
 from datasets import load_dataset
 from pandas import DataFrame
 from torch import LongTensor
 from torch.utils.data import Dataset, DataLoader
+from torch import optim
+from torch.nn import CrossEntropyLoss
+from torch.nn.utils import clip_grad_norm_
 
 from DataProcessor import DataProcessor
 from CustomTokenizer import CustomTokenizer as Tokenizer
 from TranslationDataset import TranslationDataset
+from Transformers.Transformer import Transformer
 
 def take_dataset() -> DataFrame:
     """
@@ -92,9 +97,33 @@ val_dataset = prepare_data(
 train_dataset = TranslationDataset(train_dataset['ita'], train_dataset['nl'])
 val_dataset = TranslationDataset(val_dataset['ita'], val_dataset['nl'])
 
-batch_size = 32
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+batch_size = 16
 shuffle = False
 epochs = 200
+embedding_dim = 64
+heads_num = 4
+layers_num = 4
+ff_dim = 512
+max_token_len = max(vocab_ita.max_lenght, vocab_nl.max_lenght)
+dropout = 0.1
+lr = 0.0001
+
+inpt_vocab_size = len(vocab_ita.word2index)
+tgt_vocab_size = len(vocab_nl.word2index)
+
+transformer_model = Transformer(
+    inpt_vocab_size=inpt_vocab_size,
+    tgt_vocab_size=tgt_vocab_size,
+    embedding_dim=embedding_dim,
+    layers_num=layers_num,
+    ff_dim=ff_dim,
+    max_token_len=max_token_len,
+    dropout=dropout,
+    device=device,
+    heads_num=heads_num
+)
 
 train_loader = DataLoader(
     dataset=train_dataset,
@@ -102,7 +131,46 @@ train_loader = DataLoader(
     shuffle=shuffle
 )
 
-for epoch in tqdm.tqdm(range(epochs)):
-    for batch_idx, (ita_data, nl_data) in enumerate(train_loader):
-        pass
+optimizer = optim.Adam(transformer_model.parameters(), lr = lr)
+criterion = CrossEntropyLoss(ignore_index=0)
 
+for epoch in tqdm.tqdm(range(epochs)):
+    transformer_model.train()
+    total_loss = 0
+    for batch_idx, (input, target) in enumerate(train_loader):
+        # print(f'Shape input pre truc : {input.shape}')
+        # print(f'Shape di tgt pre trun : {target.shape}')
+
+        input, target = input.to(device), target.to(device)
+
+        optimizer.zero_grad()
+
+        input_truncated = input[:, :128]
+        # print(f'shape input trunc : {input_truncated.shape}')
+        tgt_truncated = target[: , :128]
+        # print(f'shape tgt trunc : {tgt_truncated.shape}')
+
+
+        tgt_shifted = tgt_truncated[:, 1:]
+
+        output = transformer_model(input_truncated, tgt_truncated[:, :-1]) 
+        # print(f'output shape : {output.shape}')
+
+        output_flat = output.reshape(-1, output.size(-1))  # [16*127, vocab_size]
+        tgt_flat = tgt_shifted.reshape(-1)  # [16*127]
+
+        # print(f"output_flat shape: {output_flat.shape}")
+        # print(f"tgt_flat shape: {tgt_flat.shape}")
+                
+        loss = criterion(output_flat, tgt_flat)
+        loss.backward()
+        clip_grad_norm_(transformer_model.parameters(), max_norm=1)
+        print(loss)
+
+        optimizer.step()
+
+        total_loss += loss.item()
+
+    avg_loss = total_loss / len(train_dataset)
+
+    print(f"Epoch {epoch + 1}/{epochs}, Average Loss: {avg_loss:.4f}")

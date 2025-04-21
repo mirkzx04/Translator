@@ -15,5 +15,5 @@ class PositionFeedForward(Module):
         self.lin1 = Linear(embedding_dim, ff_dim)
         self.lin2 = Linear(ff_dim, embedding_dim)
 
-    def forward(self):
-        return self.lin2(relu(self.lin1))
+    def forward(self, X):
+        return self.lin2(relu(self.lin1(X)))
