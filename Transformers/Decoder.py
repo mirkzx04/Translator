@@ -49,10 +49,10 @@ class Decoder(Module):
 
         return attn_norm
 
-    def forward(self, X_train, enc_output, src_mask, tgt_mask):
+    def forward(self, X_train, enc_output, inpt_mask, tgt_mask):
         sub_layer1 = self.sub_layer1(X_train, tgt_mask)
 
-        sub_layer2 = self.sub_layer2(sub_layer1, enc_output, src_mask)
+        sub_layer2 = self.sub_layer2(sub_layer1=sub_layer1, enc_output=enc_output, mask=inpt_mask)
 
         ff_out = self.ff(sub_layer2)
 
